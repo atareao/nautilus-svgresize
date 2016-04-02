@@ -27,6 +27,7 @@ from gi.repository import Nautilus as FileManager
 from urllib import unquote_plus
 from Queue import Queue
 import cairo
+import shutil
 import os
 import subprocess
 import threading
@@ -46,7 +47,9 @@ def create_png(svg_file, png_file, width, height):
     dimensions = svgsurface.get_dimensions()
     zw = width / dimensions.width
     zh = height / dimensions.height
-    pngsurface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+    pngsurface = cairo.ImageSurface(cairo.FORMAT_ARGB32,
+                                    int(width),
+                                    int(height))
     context = cairo.Context(pngsurface)
     context.save()
     context.scale(zw, zh)
@@ -350,9 +353,9 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             width = options['width'] * 0.75
             height = options['height'] * 0.75
             if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'drawable-ldpi')
-            else:
                 directory = os.path.join(parent_directory, 'mipmap-ldpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-ldpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
@@ -362,9 +365,9 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             width = options['width'] * 1.0
             height = options['height'] * 1.0
             if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'drawable-mdpi')
-            else:
                 directory = os.path.join(parent_directory, 'mipmap-mdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-mdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
@@ -374,9 +377,9 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             width = options['width'] * 1.5
             height = options['height'] * 1.5
             if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'drawable-hdpi')
-            else:
                 directory = os.path.join(parent_directory, 'mipmap-hdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-hdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
@@ -386,9 +389,9 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             width = options['width'] * 2.0
             height = options['height'] * 2.0
             if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'drawable-xhdpi')
-            else:
                 directory = os.path.join(parent_directory, 'mipmap-xhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-xhdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
@@ -398,9 +401,9 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             width = options['width'] * 3.0
             height = options['height'] * 3.0
             if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'drawable-xxhdpi')
-            else:
                 directory = os.path.join(parent_directory, 'mipmap-xxhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-xxhdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
@@ -410,9 +413,9 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             width = options['width'] * 4.0
             height = options['height'] * 4.0
             if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'drawable-xxxhdpi')
-            else:
                 directory = os.path.join(parent_directory, 'mipmap-xxxhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-xxxhdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
