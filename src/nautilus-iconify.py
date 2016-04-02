@@ -20,9 +20,12 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from gi.repository import Gtk
+from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Rsvg
 from gi.repository import Nautilus as FileManager
+from urllib import unquote_plus
+from Queue import Queue
 import cairo
 import os
 import subprocess
@@ -30,6 +33,12 @@ import threading
 from PIL import Image
 
 SIZES = ['ldpi', 'mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']
+NUM_THREADS = 4
+
+
+def increase(worker, image, progreso):
+    GLib.idle_add(progreso.increase)
+    return False
 
 
 def create_png(svg_file, png_file, width, height):
@@ -47,11 +56,11 @@ def create_png(svg_file, png_file, width, height):
     pngsurface.write_to_png(png_file)
     pngsurface.finish()
     image = Image.open(png_file)
-    image.save(png_file+'.png', optimize=True)
+    image.save(png_file, optimize=True)
 
 
 def optimize_png(file_in, level):
-    level = '-o'+str(level)
+    level = '-o'+str(int(level))
     subprocess.check_call(['optipng', level, file_in])
 
 
@@ -92,7 +101,7 @@ class Manager(GObject.GObject):
             progreso = Progreso('Converting files...', None, total)
             total_workers = total if NUM_THREADS > total else NUM_THREADS
             for i in range(total_workers):
-                worker = Worker(cua, self.backcall)
+                worker = Worker(cua, self.backcall, self.options)
                 # worker.connect('converted', GLib.idle_add, progreso.increase)
                 # worker.connect('converted', progreso.increase)
                 worker.connect('executed', increase, progreso)
@@ -129,7 +138,7 @@ class Worker(GObject.GObject, threading.Thread):
     def run(self):
         while True:
             element = self.cua.get()
-            if file_in is None:
+            if element is None:
                 break
             try:
                 self.backcall(element, self.options)
@@ -307,23 +316,24 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             fileName, fileExtension = os.path.splitext(unquote_plus(
                 item.get_uri()[7:]))
             if fileExtension.lower() != '.svg':
-                return Fase
+                return False
         return True
 
-    def process(self, menu, selected):
+    def iconify(self, menu, selected):
         rd = ResizeDialog()
         if rd.run() == Gtk.ResponseType.ACCEPT:
             rd.hide()
             options = {}
             options['width'] = int(rd.options['width'].get_text())
             options['height'] = int(rd.options['height'].get_text())
-            options['ldpi'] = rd.options['ldpi'].get_value()
-            options['ldpi'] = rd.options['ldpi'].get_value()
-            options['mdpi'] = rd.options['mdpi'].get_value()
-            options['hdpi'] = rd.options['hdpi'].get_value()
-            options['xhdpi'] = rd.options['xhdpi'].get_value()
-            options['xxhdpi'] = rd.options['xxhdpi'].get_value()
-            options['xxxhdpi'] = rd.options['xxxhdpi'].get_value()
+            options['ldpi'] = rd.options['ldpi'].get_active()
+            options['ldpi'] = rd.options['ldpi'].get_active()
+            options['mdpi'] = rd.options['mdpi'].get_active()
+            options['hdpi'] = rd.options['hdpi'].get_active()
+            options['xhdpi'] = rd.options['xhdpi'].get_active()
+            options['xxhdpi'] = rd.options['xxhdpi'].get_active()
+            options['xxxhdpi'] = rd.options['xxxhdpi'].get_active()
+            options['is-launcher'] = rd.options['is-launcher'].get_active()
             options['optimize'] = rd.options['optimize'].get_active()
             options['optimization-level'] =\
                 rd.options['optimization-level'].get_value()
@@ -334,58 +344,75 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
     def backcall(self, element, options):
         basename = os.path.basename(element)
         filename, fileextension = os.path.splitext(basename)
-        directory = os.path.dirname(element)
-        parent_directory = os.path.join(directory, 'res')
+        parent_directory = os.path.join(os.path.dirname(element), 'res')
         create_directory(parent_directory)
         if options['ldpi']:
             width = options['width'] * 0.75
             height = options['height'] * 0.75
-            directory = os.path.join(directory, 'ldpi')
+            if options['is-launcher']:
+                directory = os.path.join(parent_directory, 'drawable-ldpi')
+            else:
+                directory = os.path.join(parent_directory, 'mipmap-ldpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
             if options['optimize']:
                 optimize_png(png_file, options['optimization-level'])
-        elif options['mdpi']:
+        if options['mdpi']:
             width = options['width'] * 1.0
             height = options['height'] * 1.0
-            directory = os.path.join(directory, 'mdpi')
+            if options['is-launcher']:
+                directory = os.path.join(parent_directory, 'drawable-mdpi')
+            else:
+                directory = os.path.join(parent_directory, 'mipmap-mdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
             if options['optimize']:
                 optimize_png(png_file, options['optimization-level'])
-        elif options['hdpi']:
-            width = options['width'] * 1.0
-            height = options['height'] * 1.0
-            directory = os.path.join(directory, 'hdpi')
+        if options['hdpi']:
+            width = options['width'] * 1.5
+            height = options['height'] * 1.5
+            if options['is-launcher']:
+                directory = os.path.join(parent_directory, 'drawable-hdpi')
+            else:
+                directory = os.path.join(parent_directory, 'mipmap-hdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
             if options['optimize']:
                 optimize_png(png_file, options['optimization-level'])
-        elif options['xhdpi']:
-            width = options['width'] * 1.0
-            height = options['height'] * 1.0
-            directory = os.path.join(directory, 'xhdpi')
+        if options['xhdpi']:
+            width = options['width'] * 2.0
+            height = options['height'] * 2.0
+            if options['is-launcher']:
+                directory = os.path.join(parent_directory, 'drawable-xhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'mipmap-xhdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
             if options['optimize']:
                 optimize_png(png_file, options['optimization-level'])
-        elif options['xxhdpi']:
-            width = options['width'] * 1.0
-            height = options['height'] * 1.0
-            directory = os.path.join(directory, 'xxhdpi')
+        if options['xxhdpi']:
+            width = options['width'] * 3.0
+            height = options['height'] * 3.0
+            if options['is-launcher']:
+                directory = os.path.join(parent_directory, 'drawable-xxhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'mipmap-xxhdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
             if options['optimize']:
                 optimize_png(png_file, options['optimization-level'])
-        elif options['xxxhdpi']:
-            width = options['width'] * 1.0
-            height = options['height'] * 1.0
-            directory = os.path.join(directory, 'xxxhdpi')
+        if options['xxxhdpi']:
+            width = options['width'] * 4.0
+            height = options['height'] * 4.0
+            if options['is-launcher']:
+                directory = os.path.join(parent_directory, 'drawable-xxxhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'mipmap-xxxhdpi')
             create_directory(directory)
             png_file = os.path.join(directory, filename + '.png')
             create_png(element, png_file, width, height)
