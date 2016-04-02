@@ -1,0 +1,21 @@
+nautilus-iconify
+================
+
+nautilus-iconify is an extension for Nautilus to create images for Android,
+in order to support multiple screens. It can create bitmap for low, hight,
+extra hight screen (and so on), and copy in folders according to android
+resources.
+
+Download
+--------
+
+Download the [package][dlp] *or* checkout the source:
+
+    $ git clone https://github.com/atareao/nautilus-iconify.git
+
+Installation
+------------
+
+    $ sudo add-apt-repositoy ppa:atareao/nautilus-extensions
+    $ sudo apt-get update
+    $ sudo apt-get install nautilus-iconfiy
