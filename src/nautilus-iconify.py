@@ -445,11 +445,15 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             options['is-launcher'] = rd.options['is-launcher'].get_active()
             options['optimize'] = rd.options['optimize'].get_active()
             files = get_files(selected)
-            manager = Manager(files, options, self.backcall)
-            manager.process()
-
-    def backcall(self, element, options):
-        pass
+            diib = DoItInBackground(files, options)
+            progreso = Progreso(_('Convert to ogg'), window, len(files))
+            diib.connect('started', progreso.set_max_value)
+            diib.connect('start_one', progreso.set_element)
+            diib.connect('end_one', progreso.increase)
+            diib.connect('ended', progreso.close)
+            progreso.connect('i-want-stop', diib.stop)
+            diib.start()
+            progreso.run()
 
     def get_file_items(self, window, sel_items):
         """
