@@ -17,7 +17,7 @@ Depends: ${misc:Depends}, ${python:Depends},
     gir1.2-rsvg-2.0,
     python-nautilus,
     python-pil,
-    optipng
+    pngnq
 Description: An extension for Nautilus to create images for Android
  An extension for Nautilus to create images for Android, in order to support
  multiple screens. It can create bitmap for low, hight, extra hight screen (and

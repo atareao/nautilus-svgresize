@@ -1,3 +1,8 @@
+nautilus-convert2ogg (0.2.0-0extras16.04.0) xenial; urgency=medium
+
+  * Added icon
+
+ -- Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>  Sun, 18 Dec 2016 13:35:37 +0100
 nautilus-iconify (0.1.0-1ubuntu2) wily; urgency=medium
 
   * Fixed some bugs

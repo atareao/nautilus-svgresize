@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 #
 # This file is part of nautilus-iconify
@@ -19,13 +19,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import gi
+try:
+    gi.require_version('Gtk', '3.0')
+    gi.require_version('Nautilus', '3.0')
+    gi.require_version('Rsvg', '2.0')
+except Exception as e:
+    print(e)
+    exit(-1)
 from gi.repository import Gtk
 from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Rsvg
 from gi.repository import Nautilus as FileManager
 from urllib import unquote_plus
-from Queue import Queue
+from threading import Thread
 import cairo
 import shutil
 import os
@@ -33,13 +41,224 @@ import subprocess
 import threading
 from PIL import Image
 
+APPNAME = 'nautilus-iconify'
+ICON = 'nautilus-iconify'
+VERSION = '$VERSION$'
+
 SIZES = ['ldpi', 'mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']
-NUM_THREADS = 4
+_ = str
 
 
-def increase(worker, image, progreso):
-    GLib.idle_add(progreso.increase)
-    return False
+class IdleObject(GObject.GObject):
+    """
+    Override GObject.GObject to always emit signals in the main thread
+    by emmitting on an idle handler
+    """
+    def __init__(self):
+        GObject.GObject.__init__(self)
+
+    def emit(self, *args):
+        GLib.idle_add(GObject.GObject.emit, self, *args)
+
+
+class DoItInBackground(IdleObject, Thread):
+    __gsignals__ = {
+        'started': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (int,)),
+        'ended': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (bool,)),
+        'start_one': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (str,)),
+        'end_one': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (float,)),
+    }
+
+    def __init__(self, elements, options):
+        IdleObject.__init__(self)
+        Thread.__init__(self)
+        self.elements = elements
+        self.options = options
+        self.stopit = False
+        self.ok = True
+        self.daemon = True
+        self.process = None
+
+    def stop(self, *args):
+        self.stopit = True
+
+    def create_icon(self, file_in):
+        basename = os.path.basename(file_in)
+        filename, fileextension = os.path.splitext(basename)
+        parent_directory = os.path.join(os.path.dirname(file_in), 'res')
+        create_directory(parent_directory)
+        if self.options['ldpi']:
+            width = self.options['width'] * 0.75
+            height = self.options['height'] * 0.75
+            if self.options['is-launcher']:
+                directory = os.path.join(parent_directory, 'mipmap-ldpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-ldpi')
+            create_directory(directory)
+            png_file = os.path.join(directory, filename + '.png')
+            create_png(element, png_file, width, height)
+            if self.options['optimize']:
+                optimize_png(png_file)
+        if options['mdpi']:
+            width = self.options['width'] * 1.0
+            height = self.options['height'] * 1.0
+            if self.options['is-launcher']:
+                directory = os.path.join(parent_directory, 'mipmap-mdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-mdpi')
+            create_directory(directory)
+            png_file = os.path.join(directory, filename + '.png')
+            create_png(element, png_file, width, height)
+            if self.options['optimize']:
+                optimize_png(png_file)
+        if self.options['hdpi']:
+            width = self.options['width'] * 1.5
+            height = self.options['height'] * 1.5
+            if self.options['is-launcher']:
+                directory = os.path.join(parent_directory, 'mipmap-hdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-hdpi')
+            create_directory(directory)
+            png_file = os.path.join(directory, filename + '.png')
+            create_png(element, png_file, width, height)
+            if self.options['optimize']:
+                optimize_png(png_file)
+        if self.options['xhdpi']:
+            width = self.options['width'] * 2.0
+            height = self.options['height'] * 2.0
+            if self.options['is-launcher']:
+                directory = os.path.join(parent_directory, 'mipmap-xhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-xhdpi')
+            create_directory(directory)
+            png_file = os.path.join(directory, filename + '.png')
+            create_png(element, png_file, width, height)
+            if self.options['optimize']:
+                optimize_png(png_file)
+        if self.options['xxhdpi']:
+            width = self.options['width'] * 3.0
+            height = self.options['height'] * 3.0
+            if self.options['is-launcher']:
+                directory = os.path.join(parent_directory, 'mipmap-xxhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-xxhdpi')
+            create_directory(directory)
+            png_file = os.path.join(directory, filename + '.png')
+            create_png(element, png_file, width, height)
+            if self.options['optimize']:
+                optimize_png(png_file)
+        if self.options['xxxhdpi']:
+            width = self.options['width'] * 4.0
+            height = self.options['height'] * 4.0
+            if self.options['is-launcher']:
+                directory = os.path.join(parent_directory, 'mipmap-xxxhdpi')
+            else:
+                directory = os.path.join(parent_directory, 'drawable-xxxhdpi')
+            create_directory(directory)
+            png_file = os.path.join(directory, filename + '.png')
+            create_png(element, png_file, width, height)
+            if self.options['optimize']:
+                optimize_png(png_file)
+
+    def run(self):
+        total = 0
+        for element in self.elements:
+            total += get_duration(element)
+        self.emit('started', total)
+        try:
+            total = 0
+            for element in self.elements:
+                if self.stopit is True:
+                    self.ok = False
+                    break
+                self.emit('start_one', element)
+                self.create_icon(element)
+                self.emit('end_one', get_duration(element))
+        except Exception as e:
+            self.ok = False
+        try:
+            if self.process is not None:
+                self.process.terminate()
+                self.process = None
+        except Exception as e:
+            print(e)
+        self.emit('ended', self.ok)
+
+
+class Progreso(Gtk.Dialog, IdleObject):
+    __gsignals__ = {
+        'i-want-stop': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, ()),
+    }
+
+    def __init__(self, title, parent):
+        Gtk.Dialog.__init__(self, title, parent,
+                            Gtk.DialogFlags.MODAL |
+                            Gtk.DialogFlags.DESTROY_WITH_PARENT)
+        IdleObject.__init__(self)
+        self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
+        self.set_size_request(330, 30)
+        self.set_resizable(False)
+        self.connect('destroy', self.close)
+        self.set_modal(True)
+        vbox = Gtk.VBox(spacing=5)
+        vbox.set_border_width(5)
+        self.get_content_area().add(vbox)
+        #
+        frame1 = Gtk.Frame()
+        vbox.pack_start(frame1, True, True, 0)
+        table = Gtk.Table(2, 2, False)
+        frame1.add(table)
+        #
+        self.label = Gtk.Label()
+        table.attach(self.label, 0, 2, 0, 1,
+                     xpadding=5,
+                     ypadding=5,
+                     xoptions=Gtk.AttachOptions.SHRINK,
+                     yoptions=Gtk.AttachOptions.EXPAND)
+        #
+        self.progressbar = Gtk.ProgressBar()
+        self.progressbar.set_size_request(300, 0)
+        table.attach(self.progressbar, 0, 1, 1, 2,
+                     xpadding=5,
+                     ypadding=5,
+                     xoptions=Gtk.AttachOptions.SHRINK,
+                     yoptions=Gtk.AttachOptions.EXPAND)
+        button_stop = Gtk.Button()
+        button_stop.set_size_request(40, 40)
+        button_stop.set_image(
+            Gtk.Image.new_from_stock(Gtk.STOCK_STOP, Gtk.IconSize.BUTTON))
+        button_stop.connect('clicked', self.on_button_stop_clicked)
+        table.attach(button_stop, 1, 2, 1, 2,
+                     xpadding=5,
+                     ypadding=5,
+                     xoptions=Gtk.AttachOptions.SHRINK)
+        self.stop = False
+        self.show_all()
+        self.max_value = float(max_value)
+        self.value = 0.0
+
+    def set_max_value(self, anobject, max_value):
+        self.max_value = float(max_value)
+
+    def get_stop(self):
+        return self.stop
+
+    def on_button_stop_clicked(self, widget):
+        self.stop = True
+        self.emit('i-want-stop')
+
+    def close(self, *args):
+        self.destroy()
+
+    def increase(self, anobject, value):
+        self.value += float(value)
+        fraction = self.value/self.max_value
+        self.progressbar.set_fraction(fraction)
+        if self.value >= self.max_value:
+            self.hide()
+
+    def set_element(self, anobject, element):
+        self.label.set_text(_('Converting: %s') % element)
 
 
 def create_png(svg_file, png_file, width, height):
@@ -62,9 +281,11 @@ def create_png(svg_file, png_file, width, height):
     image.save(png_file, optimize=True)
 
 
-def optimize_png(file_in, level):
-    level = '-o'+str(int(level))
-    subprocess.check_call(['optipng', level, file_in])
+def optimize_png(file_in):
+    rutine = 'pngnq -f -e "-reduced.png" -n 256 "%s"' % (file_in)
+    args = shlex.split(rutine)
+    self.process = subprocess.Popen(args, stdout=subprocess.PIPE)
+    out, err = self.process.communicate()
 
 
 def create_directory(dirname):
@@ -87,112 +308,15 @@ def get_files(files_in):
     return files
 
 
-class Manager(GObject.GObject):
-
-    def __init__(self, elements, options, backcall):
-        self.elements = elements
-        self.backcall = backcall
-        self.options = options
-
-    def process(self):
-        total = len(self.elements)
-        if total > 0:
-            print(self.elements)
-            workers = []
-            print('1.- Starting process creating workers')
-            cua = Queue(maxsize=total + 1)
-            progreso = Progreso('Converting files...', None, total)
-            total_workers = total if NUM_THREADS > total else NUM_THREADS
-            for i in range(total_workers):
-                worker = Worker(cua, self.backcall, self.options)
-                # worker.connect('converted', GLib.idle_add, progreso.increase)
-                # worker.connect('converted', progreso.increase)
-                worker.connect('executed', increase, progreso)
-                worker.start()
-                workers.append(worker)
-            print('2.- Puting task in the queue')
-            for element in self.elements:
-                cua.put(element)
-            print('3.- Block until all tasks are done')
-            cua.join()
-            print('4.- Stopping workers')
-            for i in range(total_workers):
-                cua.put(None)
-            for worker in workers:
-                worker.join()
-                while Gtk.events_pending():
-                    Gtk.main_iteration()
-            print('5.- The End')
-
-
-class Worker(GObject.GObject, threading.Thread):
-    __gsignals__ = {
-        'executed': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (object, ))
-        }
-
-    def __init__(self, cua, backcall, options):
-        threading.Thread.__init__(self)
-        GObject.GObject.__init__(self)
-        self.setDaemon(True)
-        self.cua = cua
-        self.backcall = backcall
-        self.options = options
-
-    def run(self):
-        while True:
-            element = self.cua.get()
-            if element is None:
-                break
-            try:
-                self.backcall(element, self.options)
-            except Exception as e:
-                print(e)
-            self.emit('executed', element)
-            self.cua.task_done()
-
-
-class Progreso(Gtk.Dialog):
-    def __init__(self, title, parent, max_value):
-        #
-        Gtk.Dialog.__init__(self, title, parent)
-        self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
-        self.set_size_request(330, 40)
-        self.set_resizable(False)
-        self.connect('destroy', self.close)
-        #
-        vbox1 = Gtk.VBox(spacing=5)
-        vbox1.set_border_width(5)
-        self.get_content_area().add(vbox1)
-        #
-        self.progressbar = Gtk.ProgressBar()
-        vbox1.pack_start(self.progressbar, True, True, 0)
-        #
-        self.show_all()
-        #
-        self.max_value = max_value
-        self.value = 0.0
-
-    def close(self, widget=None):
-        self.destroy()
-
-    def increase(self):
-        self.value += 1.0
-        fraction = self.value / self.max_value
-        self.progressbar.set_fraction(fraction)
-        if self.value == self.max_value:
-            self.hide()
-
-
 class ResizeDialog(Gtk.Dialog):
-
-    def __init__(self):
-        Gtk.Dialog.__init__(self, 'Iconify', None, Gtk.DialogFlags.MODAL |
+    def __init__(self, window):
+        Gtk.Dialog.__init__(self, 'Iconify', window, Gtk.DialogFlags.MODAL |
                             Gtk.DialogFlags.DESTROY_WITH_PARENT,
                             (Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
                              Gtk.STOCK_OK, Gtk.ResponseType.ACCEPT))
         self.options = {}
         self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
-        self.set_size_request(200, 300)
+        self.set_size_request(400, 300)
         vbox = Gtk.VBox(spacing=5)
         vbox.set_border_width(5)
         self.get_content_area().add(vbox)
@@ -282,24 +406,6 @@ class ResizeDialog(Gtk.Dialog):
         self.options['optimize'].connect('activate', self.on_optimize_changed)
         self.options['optimize'].connect('button-press-event',
                                          self.on_optimize_changed)
-        label = Gtk.Label.new('Optimization level'+':')
-        label.set_alignment(0, 0.5)
-        table02.attach(label, 0, 1, 2, 3,
-                       xoptions=Gtk.AttachOptions.FILL,
-                       yoptions=Gtk.AttachOptions.FILL,
-                       xpadding=5,
-                       ypadding=5)
-        adjustment1 = Gtk.Adjustment(0, 0, 8, 1, 1, 1)
-        self.options['optimization-level'] = Gtk.Scale()
-        self.options['optimization-level'].set_digits(0)
-        self.options['optimization-level'].set_size_request(200, 10)
-        self.options['optimization-level'].set_adjustment(adjustment1)
-        self.options['optimization-level'].set_sensitive(False)
-        table02.attach(self.options['optimization-level'], 1, 2, 2, 3,
-                       xoptions=Gtk.AttachOptions.FILL,
-                       yoptions=Gtk.AttachOptions.FILL,
-                       xpadding=5,
-                       ypadding=5)
         self.show_all()
 
     def on_optimize_changed(self, widget, data=None):
@@ -322,8 +428,8 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
                 return False
         return True
 
-    def iconify(self, menu, selected):
-        rd = ResizeDialog()
+    def iconify(self, menu, selected, window):
+        rd = ResizeDialog(window)
         if rd.run() == Gtk.ResponseType.ACCEPT:
             rd.hide()
             options = {}
@@ -338,101 +444,76 @@ class IconifyMenuProvider(GObject.GObject, FileManager.MenuProvider):
             options['xxxhdpi'] = rd.options['xxxhdpi'].get_active()
             options['is-launcher'] = rd.options['is-launcher'].get_active()
             options['optimize'] = rd.options['optimize'].get_active()
-            options['optimization-level'] =\
-                rd.options['optimization-level'].get_value()
             files = get_files(selected)
             manager = Manager(files, options, self.backcall)
             manager.process()
 
     def backcall(self, element, options):
-        basename = os.path.basename(element)
-        filename, fileextension = os.path.splitext(basename)
-        parent_directory = os.path.join(os.path.dirname(element), 'res')
-        create_directory(parent_directory)
-        if options['ldpi']:
-            width = options['width'] * 0.75
-            height = options['height'] * 0.75
-            if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'mipmap-ldpi')
-            else:
-                directory = os.path.join(parent_directory, 'drawable-ldpi')
-            create_directory(directory)
-            png_file = os.path.join(directory, filename + '.png')
-            create_png(element, png_file, width, height)
-            if options['optimize']:
-                optimize_png(png_file, options['optimization-level'])
-        if options['mdpi']:
-            width = options['width'] * 1.0
-            height = options['height'] * 1.0
-            if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'mipmap-mdpi')
-            else:
-                directory = os.path.join(parent_directory, 'drawable-mdpi')
-            create_directory(directory)
-            png_file = os.path.join(directory, filename + '.png')
-            create_png(element, png_file, width, height)
-            if options['optimize']:
-                optimize_png(png_file, options['optimization-level'])
-        if options['hdpi']:
-            width = options['width'] * 1.5
-            height = options['height'] * 1.5
-            if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'mipmap-hdpi')
-            else:
-                directory = os.path.join(parent_directory, 'drawable-hdpi')
-            create_directory(directory)
-            png_file = os.path.join(directory, filename + '.png')
-            create_png(element, png_file, width, height)
-            if options['optimize']:
-                optimize_png(png_file, options['optimization-level'])
-        if options['xhdpi']:
-            width = options['width'] * 2.0
-            height = options['height'] * 2.0
-            if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'mipmap-xhdpi')
-            else:
-                directory = os.path.join(parent_directory, 'drawable-xhdpi')
-            create_directory(directory)
-            png_file = os.path.join(directory, filename + '.png')
-            create_png(element, png_file, width, height)
-            if options['optimize']:
-                optimize_png(png_file, options['optimization-level'])
-        if options['xxhdpi']:
-            width = options['width'] * 3.0
-            height = options['height'] * 3.0
-            if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'mipmap-xxhdpi')
-            else:
-                directory = os.path.join(parent_directory, 'drawable-xxhdpi')
-            create_directory(directory)
-            png_file = os.path.join(directory, filename + '.png')
-            create_png(element, png_file, width, height)
-            if options['optimize']:
-                optimize_png(png_file, options['optimization-level'])
-        if options['xxxhdpi']:
-            width = options['width'] * 4.0
-            height = options['height'] * 4.0
-            if options['is-launcher']:
-                directory = os.path.join(parent_directory, 'mipmap-xxxhdpi')
-            else:
-                directory = os.path.join(parent_directory, 'drawable-xxxhdpi')
-            create_directory(directory)
-            png_file = os.path.join(directory, filename + '.png')
-            create_png(element, png_file, width, height)
-            if options['optimize']:
-                optimize_png(png_file, options['optimization-level'])
+        pass
 
     def get_file_items(self, window, sel_items):
+        """
+        Adds the 'Replace in Filenames' menu item to the File Manager\
+        right-click menu, connects its 'activate' signal to the 'run'\
+        method passing the selected Directory/File
+        """
         if self.all_files_are_svg(sel_items):
             top_menuitem = FileManager.MenuItem(
-                name='IconifyMenuProvider::Gtk-iconify-tools',
-                label='Iconify for Android',
-                tip='Create icons for Android')
-            top_menuitem.connect('activate', self.iconify, sel_items)
+                name='IconifyMenuProvider::Gtk-iconify-top',
+                label=_('Iconify for Android...'),
+                tip=_('Create icons for Android'))
+            submenu = FileManager.Menu()
+            top_menuitem.set_submenu(submenu)
+
+            sub_menuitem_00 = FileManager.MenuItem(
+                name='IconifyMenuProvider::Gtk-iconify-sub-01',
+                label=_('Iconify'),
+                tip=_('Create icons for Android'))
+            sub_menuitem_00.connect('activate',
+                                    self.iconify,
+                                    sel_items,
+                                    window)
+            submenu.append_item(sub_menuitem_00)
+            sub_menuitem_01 = FileManager.MenuItem(
+                name='IconifyMenuProvider::Gtk-iconify-sub-02',
+                label=_('About'),
+                tip=_('About'))
+            sub_menuitem_01.connect('activate', self.about, window)
+            submenu.append_item(sub_menuitem_01)
             #
             return top_menuitem,
         return
 
+    def about(self, widget, window):
+        ad = Gtk.AboutDialog(parent=window)
+        ad.set_name(APPNAME)
+        ad.set_version(VERSION)
+        ad.set_copyright('Copyrignt (c) 2016\nLorenzo Carbonell')
+        ad.set_comments(APPNAME)
+        ad.set_license('''
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <http://www.gnu.org/licenses/>.
+''')
+        ad.set_website('http://www.atareao.es')
+        ad.set_website_label('http://www.atareao.es')
+        ad.set_authors([
+            'Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>'])
+        ad.set_documenters([
+            'Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>'])
+        ad.set_icon_name(ICON)
+        ad.set_logo_icon_name(APPNAME)
+        ad.run()
+        ad.destroy()
+
 if __name__ == '__main__':
-    rd = ResizeDialog()
+    rd = ResizeDialog(None)
     rd.run()
