@@ -40,8 +40,8 @@ import os
 import threading
 import traceback
 
-APPNAME = 'nautilus-iconify'
-ICON = 'nautilus-iconify'
+APPNAME = 'nautilus-svgresize'
+ICON = 'nautilus-svgresize'
 VERSION = '$VERSION$'
 
 SIZES = ['ldpi', 'mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']
@@ -182,7 +182,7 @@ def resize_svg(svg_file, svg_file_resized, width, height):
 
 def resize_images(files, options, progreso):
     def on_resize_images_done(result, error):
-        progreso.destroy()
+        pass
 
     @async_function(on_done=on_resize_images_done)
     def do_resize_images_in_thread(files, options, progreso):
@@ -198,7 +198,10 @@ def resize_images(files, options, progreso):
                                             os.path.basename(svg_file))
             progreso.set_element(svg_file)
             resize_svg(svg_file, svg_file_resized, width, height)
+            if progreso.get_stop() is True:
+                break
             progreso.increase()
+        progreso.destroy()
 
     do_resize_images_in_thread(files, options, progreso)
 
