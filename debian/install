@@ -1,2 +1,2 @@
-src/nautilus-iconify.py /usr/share/nautilus-python/extensions
-data/nautilus-iconify.svg /usr/share/icons/gnome/scalable/apps
+src/nautilus-svgresize.py /usr/share/nautilus-python/extensions
+data/nautilus-svgresize.svg /usr/share/icons/gnome/scalable/apps
