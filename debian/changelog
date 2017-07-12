@@ -1,8 +1,14 @@
-nautilus-svgresize (0.2.0-0extras17.04.3) zesty; urgency=medium
+nautilus-svgresize (0.2.1-0extras17.04.0) zesty; urgency=medium
+
+  * basename
+
+ -- Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>  Wed, 12 Jul 2017 05:43:07 +0200
+
+nautilus-svgresize (0.2.0-0extras17.04.4) zesty; urgency=medium
 
   * do it in background
 
- -- Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>  Tue, 11 Jul 2017 19:52:58 +0200
+ -- Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>  Wed, 12 Jul 2017 05:40:08 +0200
 
 nautilus-svgresize (0.1.0-0extras17.04.3) zesty; urgency=medium
 

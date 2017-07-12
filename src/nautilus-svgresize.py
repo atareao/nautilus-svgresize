@@ -143,12 +143,12 @@ class Progreso(Gtk.Dialog):
     def increase(self, widget, value):
         self.value += float(value)
         fraction = self.value/self.max_value
-        GLib.idle_add(self.progressbar.set_fraction, fraction)
+        self.progressbar.set_fraction(fraction)
         if int(self.value) >= int(self.max_value):
-            GLib.idle_add(self.destroy)
+            self.destroy()
 
-    def set_element(self, element):
-        GLib.idle_add(self.label.set_text, _('Resizing: %s') % element)
+    def set_element(self, widget, element):
+        self.label.set_text(_('Resizing: %s') % element)
 
 
 def resize_svg(svg_file, svg_file_resized, width, height):
@@ -222,9 +222,9 @@ class DoItInBackground(GObject.GObject, threading.Thread):
                 if self.stopit is True:
                     self.ok = False
                     break
-                self.emit('start_one', svg_file)
-                svg_file_resized = os.path.join(dirname,
-                                                os.path.basename(svg_file))
+                filename = os.path.basename(svg_file)
+                self.emit('start_one', filename)
+                svg_file_resized = os.path.join(dirname, filename)
                 resize_svg(svg_file, svg_file_resized, width, height)
                 self.emit('end_one', 1.0)
         except Exception as e:
