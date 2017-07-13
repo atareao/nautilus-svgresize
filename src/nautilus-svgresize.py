@@ -33,45 +33,19 @@ from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Rsvg
 from gi.repository import Nautilus as FileManager
+from PIL import Image
 from urllib import unquote_plus
 import cairo
 import shutil
-import os
 import threading
-import traceback
+import os
 
-APPNAME = 'nautilus-svgresize'
-ICON = 'nautilus-svgresize'
+
+APPNAME = '$APP$'
+ICON = '$APP$'
 VERSION = '$VERSION$'
 
-SIZES = ['ldpi', 'mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']
 _ = str
-
-
-def _async_call(f, args, kwargs, on_done):
-    def run(data):
-        f, args, kwargs, on_done = data
-        error = None
-        result = None
-        try:
-            result = f(*args, **kwargs)
-        except Exception as e:
-            e.traceback = traceback.format_exc()
-            error = 'Unhandled exception in asyn call:\n{}'.format(e.traceback)
-        GLib.idle_add(lambda: on_done(result, error))
-
-    data = f, args, kwargs, on_done
-    thread = threading.Thread(target=run, args=(data,))
-    thread.daemon = True
-    thread.start()
-
-
-def async_function(on_done=None):
-    def wrapper(f):
-        def run(*args, **kwargs):
-            _async_call(f, args, kwargs, on_done)
-        return run
-    return wrapper
 
 
 class Progreso(Gtk.Dialog):
@@ -151,34 +125,64 @@ class Progreso(Gtk.Dialog):
         self.label.set_text(_('Resizing: %s') % element)
 
 
-def resize_svg(svg_file, svg_file_resized, width, height):
+def resize_svg(svg_file, svg_file_resized, width, height, png):
     if os.path.exists(svg_file):
-        width = round(0.8 * width, 0)
-        height = round(0.8 * height, 0)
-        fo = open(svg_file_resized, 'w')
-        print('---', width, height, '---')
-        surface = cairo.SVGSurface(fo, width, height)
-        ctx = cairo.Context(surface)
-        svg = Rsvg.Handle.new_from_file(svg_file)
-        dimensions = svg.get_dimensions()
-        zw = float(width) / float(dimensions.width)
-        zh = float(height) / float(dimensions.height)
-        if zw > zh:
-            z = zh
-        else:
-            z = zw
-        print(zw, zh, z)
-        if z <= 0:
-            raise(Exception)
-        if width != height:
-            if width < height:
-                ctx.translate(0, (float(height)-float(width))/2.0)
+        if png is True:
+            png_file = os.path.splitext(svg_file_resized)[0] + '.png'
+            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32,
+                                         int(width),
+                                         int(height))
+            ctx = cairo.Context(surface)
+            svg = Rsvg.Handle.new_from_file(svg_file)
+            dimensions = svg.get_dimensions()
+            zw = float(width) / float(dimensions.width)
+            zh = float(height) / float(dimensions.height)
+            if zw > zh:
+                z = zh
             else:
-                ctx.translate((float(width)-float(height))/2.0, 0)
-        ctx.scale(z, z)
-        svg.render_cairo(ctx)
-        surface.flush()
-        surface.finish()
+                z = zw
+            print(zw, zh, z)
+            if z <= 0:
+                raise(Exception)
+            if width != height:
+                if width < height:
+                    ctx.translate(0, (float(height)-float(width))/2.0)
+                else:
+                    ctx.translate((float(width)-float(height))/2.0, 0)
+            ctx.scale(z, z)
+            svg.render_cairo(ctx)
+            surface.flush()
+            surface.write_to_png(png_file)
+            surface.finish()
+            image = Image.open(png_file)
+            image.save(png_file, optimize=True)
+        else:
+            width = round(0.8 * width, 0)
+            height = round(0.8 * height, 0)
+            fo = open(svg_file_resized, 'w')
+            print('---', width, height, '---')
+            surface = cairo.SVGSurface(fo, width, height)
+            ctx = cairo.Context(surface)
+            svg = Rsvg.Handle.new_from_file(svg_file)
+            dimensions = svg.get_dimensions()
+            zw = float(width) / float(dimensions.width)
+            zh = float(height) / float(dimensions.height)
+            if zw > zh:
+                z = zh
+            else:
+                z = zw
+            print(zw, zh, z)
+            if z <= 0:
+                raise(Exception)
+            if width != height:
+                if width < height:
+                    ctx.translate(0, (float(height)-float(width))/2.0)
+                else:
+                    ctx.translate((float(width)-float(height))/2.0, 0)
+            ctx.scale(z, z)
+            svg.render_cairo(ctx)
+            surface.flush()
+            surface.finish()
     else:
         raise(Exception)
 
@@ -207,13 +211,11 @@ class DoItInBackground(GObject.GObject, threading.Thread):
         self.stopit = True
 
     def run(self):
-        total = len(self.files)
-        self.emit('started', total)
+        self.emit('started', len(self.files))
         try:
-            total = 0
-
             width = self.options['width']
             height = self.options['height']
+            png = self.options['png']
             dirname = os.path.join(os.path.dirname(self.files[0]),
                                    '{0}x{1}'.format(width, height))
             create_directory(dirname)
@@ -225,7 +227,7 @@ class DoItInBackground(GObject.GObject, threading.Thread):
                 filename = os.path.basename(svg_file)
                 self.emit('start_one', filename)
                 svg_file_resized = os.path.join(dirname, filename)
-                resize_svg(svg_file, svg_file_resized, width, height)
+                resize_svg(svg_file, svg_file_resized, width, height, png)
                 self.emit('end_one', 1.0)
         except Exception as e:
             self.ok = False
@@ -298,6 +300,13 @@ class ResizeDialog(Gtk.Dialog):
         self.options['height'] = Gtk.Entry()
         grid.attach(self.options['height'], 1, 1, 1, 1)
 
+        label02 = Gtk.Label.new(_('Save as PNG?') + ':')
+        label02.set_alignment(0, 0.5)
+        grid.attach(label02, 0, 2, 1, 1)
+
+        self.options['png'] = Gtk.CheckButton()
+        grid.attach(self.options['png'], 1, 2, 1, 1)
+
         self.show_all()
 
 
@@ -321,6 +330,7 @@ class SVGResizeMenuProvider(GObject.GObject, FileManager.MenuProvider):
             options = {}
             options['width'] = int(rd.options['width'].get_text())
             options['height'] = int(rd.options['height'].get_text())
+            options['png'] = rd.options['png'].get_active()
             files = get_files(selected)
             diib = DoItInBackground(files, options)
             progreso = Progreso(_('Resize svg images'), window)
@@ -331,6 +341,7 @@ class SVGResizeMenuProvider(GObject.GObject, FileManager.MenuProvider):
             progreso.connect('i-want-stop', diib.stop)
             diib.start()
             progreso.run()
+        rd.destroy()
 
     def get_file_items(self, window, sel_items):
         """
@@ -397,8 +408,7 @@ this program. If not, see <http://www.gnu.org/licenses/>.
 
 
 if __name__ == '__main__':
-    '''
-    import time
+
     files = ['/home/lorenzo/Escritorio/raspberry_resized0.svg',
              '/home/lorenzo/Escritorio/raspberry_resized1.svg',
              '/home/lorenzo/Escritorio/raspberry_resized2.svg',
@@ -406,8 +416,13 @@ if __name__ == '__main__':
              '/home/lorenzo/Escritorio/raspberry_resized4.svg',
              '/home/lorenzo/Escritorio/raspberry_resized5.svg',
              '/home/lorenzo/Escritorio/raspberry_resized6.svg']
-    options = {'width': 256, 'height': 256}
-    resize_images(files, options, None)
-    #time.sleep(20)
-    '''
+    files2 = ['/home/lorenzo/Escritorio/raspberry_resized10.svg',
+              '/home/lorenzo/Escritorio/raspberry_resized11.svg',
+              '/home/lorenzo/Escritorio/raspberry_resized12.svg',
+              '/home/lorenzo/Escritorio/raspberry_resized13.svg',
+              '/home/lorenzo/Escritorio/raspberry_resized14.svg',
+              '/home/lorenzo/Escritorio/raspberry_resized15.svg',
+              '/home/lorenzo/Escritorio/raspberry_resized16.svg']
+    for index, afile in enumerate(files):
+        resize_svg(afile, files2[index], 500, 500, True)
     exit(0)
