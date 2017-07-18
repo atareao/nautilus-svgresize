@@ -17,6 +17,7 @@ Depends: ${misc:Depends}, ${python:Depends},
     gir1.2-nautilus-3.0,
     gir1.2-rsvg-2.0,
     python-pil,
+    python-concurrent.futures,
     python-nautilus
 Description: An extension for Nautilus to resize svg images.
  An extension for Nautilus to resize svg images.

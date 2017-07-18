@@ -37,7 +37,7 @@ from PIL import Image
 from urllib import unquote_plus
 import cairo
 import shutil
-import threading
+from concurrent import futures
 import os
 
 
@@ -95,14 +95,17 @@ class Progreso(Gtk.Dialog):
                      ypadding=5,
                      xoptions=Gtk.AttachOptions.SHRINK)
         self.stop = False
-        self.value = 0.0
+        self.current_size = 0.0
+        self.total_size = 0.0
+        self.is_running = False
+
         self.show_all()
 
     def emit(self, *args):
         GLib.idle_add(GObject.GObject.emit, self, *args)
 
-    def set_max_value(self, widget, max_value):
-        self.max_value = float(max_value)
+    def set_total_size(self, total_size):
+        self.total_size = float(total_size)
 
     def get_stop(self):
         return self.stop
@@ -114,18 +117,21 @@ class Progreso(Gtk.Dialog):
     def close(self, *args):
         self.destroy()
 
-    def increase(self, widget, value):
-        self.value += float(value)
-        fraction = self.value/self.max_value
-        self.progressbar.set_fraction(fraction)
-        if int(self.value) >= int(self.max_value):
-            self.destroy()
+    def increase(self, widget=None, x=1.0):
+        self.current_size += float(x)
+        if self.current_size == self.total_size:
+            GLib.idle_add(self.destroy)
+        else:
+            fraction = float(self.current_size) / float(self.total_size)
+            GLib.idle_add(self.progressbar.set_fraction, fraction)
 
-    def set_element(self, widget, element):
-        self.label.set_text(_('Resizing: %s') % element)
+    def set_element(self, widget=None, element=''):
+        GLib.idle_add(self.label.set_text, str(element))
 
 
-def resize_svg(svg_file, svg_file_resized, width, height, png):
+def resize_svg(args):
+    svg_file, svg_file_resized, width, height, png, diib = args
+    diib.emit('start_one', os.path.basename(svg_file))
     if os.path.exists(svg_file):
         if png is True:
             png_file = os.path.splitext(svg_file_resized)[0] + '.png'
@@ -185,9 +191,10 @@ def resize_svg(svg_file, svg_file_resized, width, height, png):
             surface.finish()
     else:
         raise(Exception)
+    diib.emit('end_one', 1.0)
 
 
-class DoItInBackground(GObject.GObject, threading.Thread):
+class DoItInBackground(GObject.GObject):
     __gsignals__ = {
         'started': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (int,)),
         'ended': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (bool,)),
@@ -195,14 +202,17 @@ class DoItInBackground(GObject.GObject, threading.Thread):
         'end_one': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE, (float,)),
     }
 
-    def __init__(self, files, options):
+    def __init__(self, title, parent, files, options):
         GObject.GObject.__init__(self)
-        threading.Thread.__init__(self)
         self.files = files
         self.options = options
         self.stopit = False
         self.ok = True
-        self.daemon = True
+        self.progreso = Progreso(title, parent)
+        self.progreso.set_total_size(len(files))
+        self.connect('start_one', self.progreso.set_element)
+        self.connect('end_one', self.progreso.increase)
+        self.connect('ended', self.progreso.close)
 
     def emit(self, *args):
         GLib.idle_add(GObject.GObject.emit, self, *args)
@@ -211,7 +221,6 @@ class DoItInBackground(GObject.GObject, threading.Thread):
         self.stopit = True
 
     def run(self):
-        self.emit('started', len(self.files))
         try:
             width = self.options['width']
             height = self.options['height']
@@ -219,16 +228,15 @@ class DoItInBackground(GObject.GObject, threading.Thread):
             dirname = os.path.join(os.path.dirname(self.files[0]),
                                    '{0}x{1}'.format(width, height))
             create_directory(dirname)
+            executor = futures.ThreadPoolExecutor(max_workers=4)
             for svg_file in self.files:
-                print(svg_file)
-                if self.stopit is True:
-                    self.ok = False
-                    break
-                filename = os.path.basename(svg_file)
-                self.emit('start_one', filename)
-                svg_file_resized = os.path.join(dirname, filename)
-                resize_svg(svg_file, svg_file_resized, width, height, png)
-                self.emit('end_one', 1.0)
+                pafile = os.path.basename(svg_file)
+                print(pafile)
+                executor.submit(resize_svg, (
+                    svg_file, os.path.join(dirname,
+                                           os.path.basename(svg_file)), width,
+                    height, png, self))
+            self.progreso.run()
         except Exception as e:
             self.ok = False
             print(e)
@@ -332,15 +340,9 @@ class SVGResizeMenuProvider(GObject.GObject, FileManager.MenuProvider):
             options['height'] = int(rd.options['height'].get_text())
             options['png'] = rd.options['png'].get_active()
             files = get_files(selected)
-            diib = DoItInBackground(files, options)
-            progreso = Progreso(_('Resize svg images'), window)
-            diib.connect('started', progreso.set_max_value)
-            diib.connect('start_one', progreso.set_element)
-            diib.connect('end_one', progreso.increase)
-            diib.connect('ended', progreso.close)
-            progreso.connect('i-want-stop', diib.stop)
-            diib.start()
-            progreso.run()
+            diib = DoItInBackground(_('Resize svg images'), window, files,
+                                    options)
+            diib.run()
         rd.destroy()
 
     def get_file_items(self, window, sel_items):
@@ -408,21 +410,10 @@ this program. If not, see <http://www.gnu.org/licenses/>.
 
 
 if __name__ == '__main__':
-
-    files = ['/home/lorenzo/Escritorio/raspberry_resized0.svg',
-             '/home/lorenzo/Escritorio/raspberry_resized1.svg',
-             '/home/lorenzo/Escritorio/raspberry_resized2.svg',
-             '/home/lorenzo/Escritorio/raspberry_resized3.svg',
-             '/home/lorenzo/Escritorio/raspberry_resized4.svg',
-             '/home/lorenzo/Escritorio/raspberry_resized5.svg',
-             '/home/lorenzo/Escritorio/raspberry_resized6.svg']
-    files2 = ['/home/lorenzo/Escritorio/raspberry_resized10.svg',
-              '/home/lorenzo/Escritorio/raspberry_resized11.svg',
-              '/home/lorenzo/Escritorio/raspberry_resized12.svg',
-              '/home/lorenzo/Escritorio/raspberry_resized13.svg',
-              '/home/lorenzo/Escritorio/raspberry_resized14.svg',
-              '/home/lorenzo/Escritorio/raspberry_resized15.svg',
-              '/home/lorenzo/Escritorio/raspberry_resized16.svg']
-    for index, afile in enumerate(files):
-        resize_svg(afile, files2[index], 500, 500, True)
+    import glob
+    options = {'width': 256, 'height': 256, 'png': False}
+    files = glob.glob('/home/lorenzo/Escritorio/Trasuntu-iconos_2.0/\
+scalable/apps/*.svg')
+    diib = DoItInBackground('Test', None, files, options)
+    diib.run()
     exit(0)
