@@ -8,16 +8,16 @@ Homepage: http://www.atareao.es
 
 Package: nautilus-svgresize
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends},
-    python,
-    python-gi,
-    python-gi-cairo,
-    python-cairo,
+Depends:
+    python3,
+    python3-gi,
+    python3-gi-cairo,
+    python3-cairo,
+    python3-pil,
+    python3-nautilus
     gir1.2-gtk-3.0,
     gir1.2-nautilus-3.0,
     gir1.2-rsvg-2.0,
-    python-pil,
-    python-concurrent.futures,
-    python-nautilus
+    nanecalib
 Description: An extension for Nautilus to resize svg images.
  An extension for Nautilus to resize svg images.
